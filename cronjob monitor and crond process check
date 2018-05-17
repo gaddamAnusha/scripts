@@ -1,5 +1,5 @@
 #!/bin/bash
-ALERT=getsupport@aceturtle.com,devops@aceturtle.com
+ALERT=user@mail.com,user@mail.com
 crontab -l > /tmp/_file
 currentcron=/tmp/_file1
 diff /tmp/_file /tmp/_file1 | grep -v "You have mail in" >> /tmp/lists
