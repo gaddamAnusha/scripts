@@ -1,0 +1,47 @@
+#!/bin/bash
+ALERT=getsupport@aceturtle.com,devops@aceturtle.com
+crontab -l > /tmp/_file
+currentcron=/tmp/_file1
+diff /tmp/_file /tmp/_file1 | grep -v "You have mail in" >> /tmp/lists
+[ ! -f "/tmp/lists" ] && { echo "Error: $0 file not found."; exit 2; }
+if [ -s "/tmp/lists" ]
+then
+        echo "/tmp/lists has some data."
+        # do something as file has data
+        #send email logic
+        mail -s "New Crontab list on Host $(hostname) " $ALERT < /tmp/lists
+else
+        echo "/tmp/lists is empty."
+        # do something as file is empty 
+        #no send email 
+fi
+
+##for crond process check
+
+###edit the following
+service=crond
+#email=getsupport@aceturtle.com,devops@aceturtle.com
+###stop editing
+
+#systemctl status crond > crondstatus
+service crond status > crondstatus
+sed -n '3p' crondstatus
+
+host=`hostname -f`
+if (( $(ps -ef | grep -v grep | grep $service | wc -l) > 0 ))
+then
+echo "$service is running"
+else
+#/etc/init.d/$service start
+/usr/sbin/$service start
+if (( $(ps -ef | grep -v grep | grep $service | wc -l) > 0 ))
+then
+subject="$service at $host has been started"
+echo "$service at $host wasn't running and has been started" | mail -s
+"$subject" $ALERT
+else
+subject="$service at $host is not running"
+echo "$service at $host is stopped and cannot be started!!!" | mail -s
+"$subject" $ALERT
+fi
+fi
