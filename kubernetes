@@ -1,0 +1,8 @@
+why you choose a container? 
+container is a volatile and non-persistent and doesn't store the data. we can make the container as a persistent using volume mapping
+ex: docker <imagename> -v <postport> <containerport>
+diff b/n vm and container? - we can only maintain necessary binaries in containers and vice versa in vm
+esxl
+kops - multiple kernel 
+scheduling of ec2 machines automaticcaly. down the environment in night and up the environment in day time
+diff b/n docker and kubernetes?
