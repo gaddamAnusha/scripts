@@ -1,0 +1,12 @@
+#!/bin/bash
+
+cd /var/www/v2/gpuma/var
+
+count=$(find report/ -cmin -60 | wc -l);
+
+if [ $count -gt 5 ]; then
+
+        echo " Puma Report file is Runnning more than five times" |
+/usr/bin/mail -s "Puma Report file Status" prod-info@aceturtle.com
+
+fi
