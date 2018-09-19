@@ -1,0 +1,25 @@
+#!/bin/bash
+
+Time=`date "+%s"`
+
+Diff=300
+
+DTime=`expr $Time - $Diff`
+
+for i in `ls /var/www/html/`
+
+do
+
+CTime=`stat /var/www/html/$i|grep Change|awk '{print $2,$3}'`
+
+ECTime=`date "+%s" -d "$CTime"`
+
+if [ $ECTime -le $Time -a $ECTime -ge $DTime ]
+
+then
+
+mail -s "Change in file permission of max" prod-alerts@aceturtle.com <<< "$i File Permission is changed"
+
+fi
+
+done
