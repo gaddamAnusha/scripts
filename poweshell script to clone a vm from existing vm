@@ -1,0 +1,166 @@
+# Step 0. User Input - Define Environment
+
+# Source VM info
+
+$SourceLocation = "CentralIndia" #Make sure location is specified without space
+
+$SourceResourceGroup = "test"
+
+$SourceVMName = "testvm"
+
+ 
+
+# Destination VM info - It appends "_Clone" to RG and VM Name
+
+# One may keep it as is or update below varilable as per requirement
+
+$DestinationResourceGroup = $SourceResourceGroup + "_Clone"
+$DestinationVMName = $SourceVMName + "_Clone"
+$DestinationStorageAccountType = "Standard_LRS" #Can be "Standard_LRS" or "Premium_LRS"
+$DestinationLocation = "CentralIndia" 
+
+# Step 1. Create Snapshot of VM OS and Data Managed Disk(s) - All Snapshots and Disks are created in Destination RG
+
+# Check if Destination RG exists, if not create it
+
+Get-AzureRmResourceGroup -Name $DestinationResourceGroup -ErrorVariable NotExist -ErrorAction SilentlyContinue
+if ($NotExist)
+{
+    New-AzureRmResourceGroup -Name $DestinationResourceGroup -Location $DestinationLocation
+}
+
+ 
+
+#Creating Snapshot of OS Disk
+
+$DestinationLocation = $SourceLocation
+$VM = get-azurermvm -name $SourceVMName -ResourceGroupName $SourceResourceGroup
+$Snapshot = New-AzureRmSnapshotConfig -SourceUri $VM.StorageProfile.OsDisk.ManagedDisk.id -Location $DestinationLocation -CreateOption Copy -AccountType $DestinationStorageAccountType
+$SnapshotCreationTimeStamp = get-date -date (get-date).ToUniversalTime() -f yyyy-MMM-dd-hh-m
+$SnapshotName = $VM.StorageProfile.OsDisk.Name + "_" + $SnapshotCreationTimeStamp
+New-AzureRmSnapshot -SnapshotName $SnapshotName -ResourceGroupName $DestinationResourceGroup -Snapshot $Snapshot
+
+ 
+
+#Creating Snapshot of all Data Disks
+
+foreach($DataDisk in $VM.StorageProfile.DataDisks)
+{
+    $SnapshotName = $DataDisk.Name + "_" + $SnapshotCreationTimeStamp
+    $Snapshot = New-AzureRmSnapshotConfig -SourceUri $DataDisk.ManagedDisk.Id -Location $DestinationLocation -CreateOption Copy -AccountType $DestinationStorageAccountType
+    New-AzureRmSnapshot -SnapshotName $SnapshotName -ResourceGroupName $DestinationResourceGroup -Snapshot $Snapshot
+}
+
+ 
+
+ 
+
+##############################################################
+
+# Step 2. Create Managed Disk from Snapshots
+
+$Snapshot= Get-AzureRmSnapshot -ResourceGroupName $DestinationResourceGroup
+foreach ($SnapshotName in $Snapshot)
+  {
+    $Snapshot = Get-AzureRmSnapshot -ResourceGroupName $DestinationResourceGroup -SnapshotName $SnapshotName.Name 
+    $DiskConfig = New-AzureRmDiskConfig -AccountType $DestinationStorageAccountType -Location $DestinationLocation -CreateOption Copy -SourceResourceId $Snapshot.Id
+    $DiskName = $SnapshotName.Name.ToLower() + '_Disk'
+    New-AzureRmDisk -Disk $DiskConfig -ResourceGroupName $DestinationResourceGroup -DiskName $DiskName
+  }
+
+ 
+
+# Step 3. Create New VM
+
+#Create Public IP Resource
+
+$IPName = $DestinationVMName + "_IP"
+$Pip = New-AzureRmPublicIpAddress -Name $IPName -ResourceGroupName $DestinationResourceGroup -Location $DestinationLocation -AllocationMethod Dynamic
+
+ 
+
+#Create SubNet
+
+$SubnetName = $DestinationVMName + "_Subnet"
+$SingleSubnet = New-AzureRmVirtualNetworkSubnetConfig -Name $SubnetName -AddressPrefix 10.0.0.0/24
+
+ 
+
+#Create VNET
+
+$VNetName = $DestinationVMName + "_VNet"
+$VNet = New-AzureRmVirtualNetwork -Name $VNetName -ResourceGroupName $DestinationResourceGroup -Location $DestinationLocation -AddressPrefix 10.0.0.0/16 -Subnet $SingleSubnet
+
+ 
+
+#Create NIC Resource
+
+$NicName = $DestinationVMName + "_Nic"
+$NIC = New-AzureRmNetworkInterface -Name $NicName -ResourceGroupName $DestinationResourceGroup -Location $DestinationLocation -SubnetId $VNet.Subnets[0].Id -PublicIpAddressId $Pip.Id
+
+ 
+
+#Create VM
+
+$VMSize = $VM.HardwareProfile.VmSize
+$VirtualMachine = New-AzureRmVMConfig -VMName $DestinationVMName -VMSize $VMSize
+$NICId = $NIC.Id
+$VirtualMachine = Add-AzureRmVMNetworkInterface -VM $VirtualMachine -Id $NICId
+$Disks = Get-AzureRmDisk -ResourceGroupName $DestinationResourceGroup
+foreach($DataDisk in $Disks)
+  {
+     if(($DataDisk.OsType -eq "Windows") -or ($DataDisk.OsType -eq "Linux"))
+      {
+          $OSDiskName=$DataDisk.Name
+          $OSDiskVhdUri=$DataDisk.Id
+          break;
+      }
+    }
+if ($VM.StorageProfile.OsDisk.OsType -eq "Windows")
+    {
+      $VirtualMachine = Set-AzureRmVMOSDisk -VM $VirtualMachine -ManagedDiskId $osDiskVhdUri -CreateOption Attach -Windows
+    }
+else
+    {
+      $VirtualMachine = Set-AzureRmVMOSDisk -VM $VirtualMachine -ManagedDiskId $osDiskVhdUri -CreateOption Attach -Linux
+    }
+#For Cloudera CentOS - Specify Plan information
+$VirtualMachine.Plan = New-Object -TypeName 'Microsoft.Azure.Management.Compute.Models.Plan'
+$VirtualMachine.Plan.Name = '7_4'
+$VirtualMachine.Plan.Product = 'cloudera-centos-os'
+$VirtualMachine.Plan.Publisher = 'cloudera'
+New-AzureRmVM -ResourceGroupName $DestinationResourceGroup -Location $SourceLocation -VM $VirtualMachine
+
+ 
+
+##############################################################
+
+# Step 4. Attach Data Disks
+
+$VirtualMachine = Get-AzureRmVM -Name $DestinationVMName -ResourceGroupName $DestinationResourceGroup
+# Loop through all Data Disks
+$i=1
+foreach($DataDisk in $Disks)
+{
+    if($DataDisk.OsType -eq $null)
+    {
+        $VirtualMachine = Add-AzureRmVMDataDisk -CreateOption Attach -Lun $i -VM $VirtualMachine -ManagedDiskId $DataDisk.Id
+        $i++
+    }
+}
+
+#Update VM
+
+Update-AzureRmVM -VM $VirtualMachine -ResourceGroupName $DestinationResourceGroup
+
+ 
+
+# 5. Delete all Snapshots
+
+# Do this step after confirming that RDP to VM is working and post confirming that everything is in place.
+
+$Snapshot= Get-AzureRmSnapshot -ResourceGroupName $DestinationResourceGroup
+foreach ($SnapshotName in $Snapshot)
+{
+    Remove-AzureRmSnapshot -ResourceGroupName $DestinationResourceGroup -SnapshotName $SnapshotName.Name -Force
+}
