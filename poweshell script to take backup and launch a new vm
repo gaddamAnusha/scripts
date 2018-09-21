@@ -1,0 +1,120 @@
+#Source Managed Disk Info
+$SourceResourceGroupName='test'
+$ManagedDiskName='testvm_OsDisk_1_ee0fcfd86a4d41d2978ae8f387e462bc'
+
+ 
+
+#Destination Info - Create Destination Storage Account in different region (if need is to create managed disk in different region)
+
+$DestinationStorageAccountResourceGroupName = "testingdestination"
+$DestinationStorageAccountName = "testingdestination"
+$DestinationStorageAccountKey = "tP3uGziARXbvWS1PZH3ONzM1DWF8+l+MqFSskWccM9ernPGBNF2JYKEAZjrTgr+vFe+tGrVU0UScxnk+6Gt4Wg=="
+$DestinationContainer = "vhds"
+$DestinationBlobName = $ManagedDiskName + ".vhd"
+$Location = "East Asia"
+$DestinationAccountType = "Standard_LRS"
+#Get SAS of Source Managed Disk
+$SAS = Grant-AzureRmDiskAccess -ResourceGroupName $SourceResourceGroupName -DiskName $ManagedDiskName -DurationInSecond 3600 -Access Read 
+
+#Set Destination Storage Account Context
+
+$DestSAContext = New-AzureStorageContext –StorageAccountName $DestinationStorageAccountName -StorageAccountKey $DestinationStorageAccountKey
+
+ 
+
+#Create Destination Container if it doesnt exists
+
+Get-AzureStorageContainer -Name $DestinationContainer -Context $DestSAContext -ErrorVariable NotExist -ErrorAction SilentlyContinue
+if ($NotExist)
+{
+   New-AzureStorageContainer -Name $DestinationContainer -Context $DestSAContext
+}
+
+ 
+
+#Start Copy - Managed Disk to Unmanaged Disk
+
+Start-AzureStorageBlobCopy -AbsoluteUri $SAS.AccessSAS -DestContext $DestSAContext -DestContainer $DestinationContainer -DestBlob $DestinationBlobName
+
+ 
+
+#Check Copy Progress
+
+Get-AzureStorageBlobCopyState -Context $DestSAContext -Container $DestinationContainer -Blob $DestinationBlobName -WaitForComplete
+
+ 
+
+#Create Managed disk
+
+$VHDUri = "https://" + $DestinationStorageAccountName + ".blob.core.windows.net/" + $DestinationContainer + "/" + $DestinationBlobName
+
+$diskConfig = New-AzureRmDiskConfig -AccountType $DestinationAccountType  -Location $Location  -SourceUri $vhdUri -CreateOption Import #-DiskSizeGB $diskSize
+
+New-AzureRmDisk -DiskName $ManagedDiskName -Disk $diskConfig -ResourceGroupName $DestinationStorageAccountResourceGroupName
+
+/*****************************************/
+
+ 
+
+Using the above script we were able to copy managed disk to another region successfully. We then tested the same by spinning a new VM using the below script.
+
+/*****************************************/
+
+$RGName = "SecondaryRG"
+
+$Location = "East Asia"
+
+$VMSize = "Standard_D4s_v3"
+
+$VMName = "SecondaryVm"
+
+$osDiskname = "PrimaryVM_OsDisk_1_83199d1e94c043fd8ab01cdf4b3a9af8"
+
+ 
+
+#Create IP
+
+$IPName = $VMName + "_IP"
+
+$Pip = New-AzureRmPublicIpAddress -Name $IPName -ResourceGroupName $RGName -Location $Location -AllocationMethod Dynamic
+
+ 
+
+#Create SubNet
+
+$SubnetName = $VMName + "_Subnet"
+
+$SingleSubnet = New-AzureRmVirtualNetworkSubnetConfig -Name $SubnetName -AddressPrefix 10.0.0.0/24
+
+ 
+
+#Create VNET
+
+$VNetName = $VMName + "_VNet"
+
+$VNet = New-AzureRmVirtualNetwork -Name $VNetName -ResourceGroupName $RGName -Location $Location -AddressPrefix 10.0.0.0/16 -Subnet $SingleSubnet
+
+ 
+
+#Create NIC Resource
+
+$NicName = $VMName+ "_Nic"
+
+$NIC = New-AzureRmNetworkInterface -Name $NicName -ResourceGroupName $RGName -Location $Location -SubnetId $VNet.Subnets[0].Id -PublicIpAddressId $Pip.Id
+
+ 
+
+#Create VM
+
+$VirtualMachine = New-AzureRmVMConfig -VMName $VMName -VMSize $VMSize
+
+$NICId = $NIC.Id
+
+$VirtualMachine = Add-AzureRmVMNetworkInterface -VM $VirtualMachine -Id $NICId
+
+$Disks = Get-AzureRmDisk -ResourceGroupName $RGName -DiskName $osDiskname
+
+$VirtualMachine = Set-AzureRmVMOSDisk -VM $VirtualMachine -ManagedDiskId $Disks.Id -StorageAccountType Standard_LRS -CreateOption Attach -Windows
+
+New-AzureRmVM -ResourceGroupName $RGName -Location $Location -VM $VirtualMachine
+
