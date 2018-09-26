@@ -1,0 +1,29 @@
+#!/bin/bash
+
+zipFilePath='/var/www/v2/gpuma/var/Reportfiles/LIST_OF_FILES.zip'
+PATH='/var/www/v2/gpuma/var/report';
+CMD_FILE_LISTS="/bin/find $PATH -type f -cmin -60";
+CMD_COUNT_FILES='wc -l';
+COUNT_COND=0;
+
+#Get the list of files based on the cond
+LIST_OF_FILES=$($CMD_FILE_LISTS)
+
+#Count the files
+FILE_COUNT=$($CMD_FILE_LISTS | /bin/wc -l)
+
+#file conver to zip 
+/bin/rm -rf "$zipFilePath"
+/bin/zip -j $zipFilePath $($CMD_FILE_LISTS)
+
+if [ $FILE_COUNT -gt $COUNT_COND ]; then
+
+        #echo $LIST_OF_FILES;
+        #/usr/bin/mail -s "Puma Test" rajasekhar.nare@aceturtle.com -A
+$LIST_OF_FILES 
+        #echo " Puma Report file is Runnning more than five times" |
+/usr/bin/mail -s "Puma Report file Status" prod-info@aceturtle.com
+       echo "Puma Report file " |  /bin/mutt -s "Puma Report file is running
+more than five times"  -A "$zipFilePath" -- rajasekhar.nare@aceturtle.com
+
+fi
