@@ -23,7 +23,8 @@ if [ $FILE_COUNT -gt $COUNT_COND ]; then
 $LIST_OF_FILES 
         #echo " Puma Report file is Runnning more than five times" |
 /usr/bin/mail -s "Puma Report file Status" prod-info@aceturtle.com
-       echo "Puma Report file " |  /bin/mutt -s "Puma Report file is running
+      # echo "Puma Report file " |  /bin/mutt -s "Puma Report file is running
 more than five times"  -A "$zipFilePath" -- rajasekhar.nare@aceturtle.com
-
+       echo "Puma Report file " |  /bin/mail -s "$zipFilePath" 
+rajasekhar.nare@aceturtle.com < $zipFilePath
 fi
