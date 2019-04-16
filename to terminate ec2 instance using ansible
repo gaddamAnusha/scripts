@@ -16,3 +16,9 @@
         wait: True
         vpc_subnet_id: subnet-55a8057b
         assign_public_ip: yes
+        
+        
+        
+  # TO know more about starting and stopping and terminating the instances follow the below url
+  https://docs.ansible.com/ansible/latest/modules/ec2_module.html
+  
